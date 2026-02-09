@@ -16,6 +16,8 @@
     const FOOD_R = 5;          // food corner radius
     const SWIPE_MIN = 20;      // min px for swipe
     const INIT_LEN = 3;        // starting snake length
+    const BOSS_BONUS = 5;      // bonus points for boss
+    const BOSS_EVERY = 13;     // boss spawns every N foods (= 1 full GOOD LOOKING)
 
     // ════════════════════════════════════════
     // STATE
@@ -26,6 +28,7 @@
     let ox, oy;                // grid offset (px)
     let snake, dir, nextDir;
     let food, foodCI;          // food color index
+    let boss;                  // null or {x, y} - boss food
     let score, speed;
     let state;                 // 'start' | 'play' | 'die' | 'over'
     let lastTick;
@@ -214,6 +217,7 @@
         speed   = START_SPEED;
         particles = [];
         foodCI  = 0;
+        boss    = null;
         dieAnim = null;
         updHud();
         spawnFood();
@@ -276,8 +280,20 @@
 
         snake.unshift({ x: nx, y: ny });
 
-        // Eat?
-        if (nx === food.x && ny === food.y) {
+        // Eat boss?
+        if (boss && nx === boss.x && ny === boss.y) {
+            score += BOSS_BONUS;
+            speed = Math.max(MIN_SPEED, speed - SPEED_STEP * 3);
+            updHud();
+            // Big explosion in orange
+            burst(ox + boss.x * cellSize + cellSize / 2, oy + boss.y * cellSize + cellSize / 2, '#FC5100', 30);
+            burst(ox + boss.x * cellSize + cellSize / 2, oy + boss.y * cellSize + cellSize / 2, '#FFB4ED', 20);
+            vib([40, 30, 40, 30, 80]);
+            boss = null;
+            spawnFood();
+        }
+        // Eat normal food?
+        else if (nx === food.x && ny === food.y) {
             score++;
             speed = Math.max(MIN_SPEED, speed - SPEED_STEP);
             updHud();
@@ -288,6 +304,11 @@
             );
             vib(12);
             foodCI = (foodCI + 1) % FOOD_COLORS.length;
+
+            // Spawn boss every GOOD LOOKING completion
+            if (score > 0 && score % BOSS_EVERY === 0) {
+                spawnBoss();
+            }
             spawnFood();
         } else {
             snake.pop();
@@ -305,6 +326,20 @@
             }
         } while (!ok);
         food = { x: fx, y: fy };
+    }
+
+    function spawnBoss() {
+        var bx, by, ok;
+        do {
+            bx = (Math.random() * cols) | 0;
+            by = (Math.random() * rows) | 0;
+            ok = true;
+            for (var i = 0; i < snake.length; i++) {
+                if (snake[i].x === bx && snake[i].y === by) { ok = false; break; }
+            }
+            if (food && food.x === bx && food.y === by) ok = false;
+        } while (!ok);
+        boss = { x: bx, y: by };
     }
 
     function tickDie(now) {
@@ -363,7 +398,10 @@
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
         if (state === 'play' || state === 'die') {
-            if (state !== 'die') drawFood(now);
+            if (state !== 'die') {
+                drawFood(now);
+                if (boss) drawBoss(now);
+            }
             drawSnake();
         }
         drawParticles();
@@ -388,6 +426,57 @@
         ctx.fillStyle = FOOD_COLORS[foodCI];
         rrect(px, py, s, s, FOOD_R);
         ctx.fill();
+    }
+
+    // ── boss ──
+    function drawBoss(now) {
+        var pulse = Math.sin(now / 120) * .1 + 1;
+        var spin  = now / 800;
+        var size  = cellSize * 1.7 * pulse;
+        var cx = ox + boss.x * cellSize + cellSize / 2;
+        var cy = oy + boss.y * cellSize + cellSize / 2;
+        var r  = size / 2;
+
+        // Outer glow
+        ctx.globalAlpha = .15;
+        ctx.fillStyle = '#FC5100';
+        ctx.beginPath();
+        ctx.arc(cx, cy, r + 6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+
+        // Orange ring
+        ctx.fillStyle = '#FC5100';
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.fill();
+
+        // White center
+        ctx.fillStyle = '#FFF';
+        ctx.beginPath();
+        ctx.arc(cx, cy, r * .55, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Rotating "GL" text
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(spin);
+        ctx.fillStyle = '#FC5100';
+        ctx.font = '700 ' + Math.round(size * .22) + 'px "Space Grotesk",system-ui,sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('GL', 0, 0);
+        ctx.restore();
+
+        // Small orbiting dots (brand colors)
+        for (var d = 0; d < 4; d++) {
+            var a = spin * 1.5 + (Math.PI * 2 / 4) * d;
+            var dotR = r * .82;
+            ctx.fillStyle = FOOD_COLORS[d];
+            ctx.beginPath();
+            ctx.arc(cx + Math.cos(a) * dotR, cy + Math.sin(a) * dotR, 2.5, 0, Math.PI * 2);
+            ctx.fill();
+        }
     }
 
     // ── snake ──
