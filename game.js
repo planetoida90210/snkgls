@@ -129,11 +129,10 @@
     // ════════════════════════════════════════
     function bindInput() {
         const po = { passive: false };
-        canvas.addEventListener('touchstart', tsStart, po);
-        canvas.addEventListener('touchmove',  tsMove, po);
-        canvas.addEventListener('touchend',   tsEnd, po);
-        // Block all scroll / refresh gestures
-        document.addEventListener('touchmove', function(e) { e.preventDefault(); }, po);
+        // Touch on DOCUMENT (not canvas) so overlays don't block input
+        document.addEventListener('touchstart', tsStart, po);
+        document.addEventListener('touchmove',  tsMove, po);
+        document.addEventListener('touchend',   tsEnd, po);
         // Keyboard (for testing on desktop)
         document.addEventListener('keydown', onKey);
     }
