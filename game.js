@@ -4,7 +4,7 @@
     // ════════════════════════════════════════
     // CONSTANTS
     // ════════════════════════════════════════
-    const LETTERS = ['G', 'O', 'O', 'D', 'L', 'O', 'O', 'K', 'I', 'N', 'G'];
+    const LETTERS = ['G', 'O', 'O', 'D', ' ', 'L', 'O', 'O', 'K', 'I', 'N', 'G', ' '];
     const FOOD_COLORS = ['#B6D1C1', '#FC5100', '#024F12', '#FFB4ED'];
     const BG1 = '#F8F7F2';
     const BG2 = '#EFEEE8';
@@ -241,8 +241,11 @@
             if (full > 1) txt += ' \u00d7 ' + full;
         }
         if (rem > 0) {
-            if (full > 0) txt += ' + ';
-            txt += LETTERS.slice(0, rem).join('');
+            var partial = LETTERS.slice(0, rem).filter(function(c){ return c !== ' '; }).join('');
+            if (partial) {
+                if (full > 0) txt += ' + ';
+                txt += partial;
+            }
         }
         $wb.textContent = txt;
 
@@ -388,17 +391,28 @@
     }
 
     // ── snake ──
+    function segAngle(i) {
+        // Direction this segment faces (toward head)
+        var dx, dy;
+        if (i === 0) { dx = dir.x; dy = dir.y; }
+        else { dx = snake[i - 1].x - snake[i].x; dy = snake[i - 1].y - snake[i].y; }
+        if (dy === 1) return Math.PI / 2;    // down
+        if (dy === -1) return -Math.PI / 2;  // up
+        return 0;                             // left or right: keep upright
+    }
+
     function drawSnake() {
         const dead = dieAnim ? dieAnim.idx : 0;
 
         // Draw tail → head so head is on top
         for (let i = snake.length - 1; i >= 0; i--) {
-            if (i < dead) continue;                         // dissolved segment
+            if (i < dead) continue;
 
             const seg = snake[i];
             const fromTail = snake.length - 1 - i;
             const letter = LETTERS[fromTail % LETTERS.length];
             const isHead = (i === 0) && !dieAnim;
+            const isSpace = letter === ' ';
 
             const px = ox + seg.x * cellSize + GAP / 2;
             const py = oy + seg.y * cellSize + GAP / 2;
@@ -417,12 +431,21 @@
                 ctx.stroke();
             }
 
-            // Letter
-            ctx.fillStyle = '#FFF';
-            ctx.font = '700 ' + Math.round(s * .52) + 'px "Space Grotesk",system-ui,sans-serif';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(letter, px + s / 2, py + s / 2 + 1);
+            // Letter (skip spaces - they act as visual separator)
+            if (!isSpace) {
+                const angle = segAngle(i);
+                const cx = px + s / 2;
+                const cy = py + s / 2 + 1;
+                ctx.save();
+                ctx.translate(cx, cy);
+                if (angle !== 0) ctx.rotate(angle);
+                ctx.fillStyle = '#FFF';
+                ctx.font = '700 ' + Math.round(s * .52) + 'px "Space Grotesk",system-ui,sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(letter, 0, 0);
+                ctx.restore();
+            }
         }
     }
 
