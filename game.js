@@ -522,7 +522,7 @@
         if (!bossImg.complete) return;
         var pulse = Math.sin(now / 120) * .08 + 1;
         var spin  = now / 2000;
-        var size  = cellSize * 2.2 * pulse;
+        var size  = cellSize * 1.35 * pulse;
         var cx = ox + boss.x * cellSize + cellSize / 2;
         var cy = oy + boss.y * cellSize + cellSize / 2;
 
@@ -530,7 +530,7 @@
         ctx.globalAlpha = .18 + Math.sin(now / 200) * .08;
         ctx.fillStyle = '#FC5100';
         ctx.beginPath();
-        ctx.arc(cx, cy, size / 2 + 8, 0, Math.PI * 2);
+        ctx.arc(cx, cy, size / 2 + 5, 0, Math.PI * 2);
         ctx.fill();
         ctx.globalAlpha = 1;
 
