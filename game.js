@@ -39,6 +39,7 @@
 
     // DOM refs
     let $ss, $os, $hud, $fs, $wb, $df;
+    let bossImg;               // preloaded boss PNG
 
     // ════════════════════════════════════════
     // BOOT
@@ -54,6 +55,9 @@
         $fs  = document.getElementById('fs');
         $wb  = document.getElementById('wb');
         $df  = document.getElementById('df');
+
+        bossImg = new Image();
+        bossImg.src = 'favicon_gls.png';
 
         measure();
         bakeBg();
@@ -430,53 +434,27 @@
 
     // ── boss ──
     function drawBoss(now) {
-        var pulse = Math.sin(now / 120) * .1 + 1;
-        var spin  = now / 800;
-        var size  = cellSize * 1.7 * pulse;
+        if (!bossImg.complete) return;
+        var pulse = Math.sin(now / 120) * .08 + 1;
+        var spin  = now / 2000;
+        var size  = cellSize * 2.2 * pulse;
         var cx = ox + boss.x * cellSize + cellSize / 2;
         var cy = oy + boss.y * cellSize + cellSize / 2;
-        var r  = size / 2;
 
-        // Outer glow
-        ctx.globalAlpha = .15;
+        // Glow
+        ctx.globalAlpha = .18 + Math.sin(now / 200) * .08;
         ctx.fillStyle = '#FC5100';
         ctx.beginPath();
-        ctx.arc(cx, cy, r + 6, 0, Math.PI * 2);
+        ctx.arc(cx, cy, size / 2 + 8, 0, Math.PI * 2);
         ctx.fill();
         ctx.globalAlpha = 1;
 
-        // Orange ring
-        ctx.fillStyle = '#FC5100';
-        ctx.beginPath();
-        ctx.arc(cx, cy, r, 0, Math.PI * 2);
-        ctx.fill();
-
-        // White center
-        ctx.fillStyle = '#FFF';
-        ctx.beginPath();
-        ctx.arc(cx, cy, r * .55, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Rotating "GL" text
+        // Rotating PNG
         ctx.save();
         ctx.translate(cx, cy);
         ctx.rotate(spin);
-        ctx.fillStyle = '#FC5100';
-        ctx.font = '700 ' + Math.round(size * .22) + 'px "Space Grotesk",system-ui,sans-serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText('GL', 0, 0);
+        ctx.drawImage(bossImg, -size / 2, -size / 2, size, size);
         ctx.restore();
-
-        // Small orbiting dots (brand colors)
-        for (var d = 0; d < 4; d++) {
-            var a = spin * 1.5 + (Math.PI * 2 / 4) * d;
-            var dotR = r * .82;
-            ctx.fillStyle = FOOD_COLORS[d];
-            ctx.beginPath();
-            ctx.arc(cx + Math.cos(a) * dotR, cy + Math.sin(a) * dotR, 2.5, 0, Math.PI * 2);
-            ctx.fill();
-        }
     }
 
     // ── snake ──
