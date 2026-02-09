@@ -409,8 +409,7 @@
             if (i < dead) continue;
 
             const seg = snake[i];
-            const fromTail = snake.length - 1 - i;
-            const letter = LETTERS[fromTail % LETTERS.length];
+            const letter = LETTERS[i % LETTERS.length];
             const isHead = (i === 0) && !dieAnim;
             const isSpace = letter === ' ';
 
