@@ -137,8 +137,9 @@
         }
         #os .scr-c > *:nth-child(1) { animation-delay: 0s; }
         #os .scr-c > *:nth-child(2) { animation-delay: .08s; }
-        #os .scr-c > *:nth-child(3) { animation-delay: .16s; }
-        #os .scr-c > *:nth-child(4) { animation-delay: .24s; }
+        #os .scr-c > *:nth-child(3) { animation-delay: .14s; }
+        #os .scr-c > *:nth-child(4) { animation-delay: .20s; }
+        #os .scr-c > *:nth-child(5) { animation-delay: .26s; }
         @keyframes slideUp {
             from { opacity: 0; transform: translateY(25px); }
         }
@@ -153,6 +154,21 @@
             font-weight: 700; color: #FC5100;
             line-height: 1;
             margin: .5vh 0;
+        }
+        .os-hi {
+            font-size: clamp(11px, 3vw, 15px);
+            font-weight: 700;
+            color: #999;
+            letter-spacing: .15em;
+            margin-bottom: .5vh;
+        }
+        .os-hi.new {
+            color: #FC5100;
+            animation: pulseNew 1s ease-in-out infinite;
+        }
+        @keyframes pulseNew {
+            0%, 100% { opacity: 1; }
+            50% { opacity: .5; }
         }
         .os-w {
             font-size: clamp(11px, 3.2vw, 17px);
@@ -217,6 +233,7 @@
         <div class="scr-c">
             <p class="ol">KONIEC GRY</p>
             <p id="fs" class="os-n">0</p>
+            <p id="hi" class="os-hi"></p>
             <p id="wb" class="os-w"></p>
             <p class="ht">DOTKNIJ ABY ZAGRAĆ PONOWNIE</p>
         </div>

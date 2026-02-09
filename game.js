@@ -6,18 +6,16 @@
     // ════════════════════════════════════════
     const LETTERS = ['G', 'O', 'O', 'D', ' ', 'L', 'O', 'O', 'K', 'I', 'N', 'G', ' '];
     const FOOD_COLORS = ['#B6D1C1', '#FC5100', '#024F12', '#FFB4ED'];
-    const BG1 = '#F8F7F2';
-    const BG2 = '#EFEEE8';
+    const BG = '#F8F7F2';
     const START_SPEED = 155;   // ms per tick
     const SPEED_STEP = 2;      // ms faster per food
     const MIN_SPEED = 72;      // fastest tick
-    const GAP = 2;             // px between segments
-    const SEG_R = 4;           // segment corner radius
-    const FOOD_R = 5;          // food corner radius
+    const GAP = 2;             // visual gap reference
     const SWIPE_MIN = 20;      // min px for swipe
     const INIT_LEN = 3;        // starting snake length
     const BOSS_BONUS = 5;      // bonus points for boss
-    const BOSS_EVERY = 13;     // boss spawns every N foods (= 1 full GOOD LOOKING)
+    const BOSS_EVERY = 13;     // boss spawns every N foods
+    const TAPER_SEGS = 3;      // tail taper segment count
 
     // ════════════════════════════════════════
     // STATE
@@ -26,19 +24,24 @@
     let W, H;                  // logical screen size
     let cellSize, cols, rows;
     let ox, oy;                // grid offset (px)
+    let bodyR;                 // snake body radius
     let snake, dir, nextDir;
-    let food, foodCI;          // food color index
-    let boss;                  // null or {x, y} - boss food
+    let prevSnake;             // previous positions for interpolation
+    let food, foodCI;          // food & color index
+    let boss;                  // null or {x, y}
     let score, speed;
     let state;                 // 'start' | 'play' | 'die' | 'over'
     let lastTick;
     let particles;
+    let floatingTexts;         // floating +1/+5 popups
     let tx0, ty0;              // touch start
     let dieAnim;               // { idx, timer }
     let bgBuf;                 // pre-rendered background
+    let hiScore;               // high score (localStorage)
+    let shakeAmount;           // screen shake intensity
 
     // DOM refs
-    let $ss, $os, $hud, $fs, $wb, $df;
+    let $ss, $os, $hud, $fs, $wb, $df, $hi;
     let bossImg;               // preloaded boss PNG
 
     // ════════════════════════════════════════
@@ -55,15 +58,21 @@
         $fs  = document.getElementById('fs');
         $wb  = document.getElementById('wb');
         $df  = document.getElementById('df');
+        $hi  = document.getElementById('hi');
 
         bossImg = new Image();
         bossImg.src = 'favicon_gls.png';
+
+        // Load high score
+        try { hiScore = parseInt(localStorage.getItem('gls_hi')) || 0; } catch (_) { hiScore = 0; }
 
         measure();
         bakeBg();
         bindInput();
 
         particles = [];
+        floatingTexts = [];
+        shakeAmount = 0;
         state = 'start';
         show($ss); hide($os); hide($hud);
 
@@ -77,26 +86,24 @@
         W = window.innerWidth;
         H = window.innerHeight;
 
-        // Read CSS safe-area values
         const cs = getComputedStyle(document.documentElement);
         const safeT = parseInt(cs.getPropertyValue('--sat')) || 0;
         const safeB = parseInt(cs.getPropertyValue('--sab')) || 0;
 
-        // Grid columns: aim for ~24px cells
         let targetCols = Math.round(W / 24);
         targetCols = Math.max(12, Math.min(20, targetCols));
         cellSize = Math.floor(W / targetCols);
         cols = Math.floor(W / cellSize);
 
-        // Rows: subtract safe areas, leave room for HUD
-        const hudH = safeT + 36;                       // HUD area
+        const hudH = safeT + 36;
         const availH = H - hudH - safeB;
         rows = Math.floor(availH / cellSize);
 
         ox = Math.round((W - cols * cellSize) / 2);
         oy = hudH + Math.round((availH - rows * cellSize) / 2);
 
-        // Size canvas
+        bodyR = cellSize * 0.44;
+
         canvas.style.width  = W + 'px';
         canvas.style.height = H + 'px';
         canvas.width  = Math.round(W * dpr);
@@ -111,21 +118,31 @@
         const bc = bgBuf.getContext('2d');
         bc.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-        // Full background
-        bc.fillStyle = BG1;
+        // Solid background
+        bc.fillStyle = BG;
         bc.fillRect(0, 0, W, H);
 
-        // Checkerboard
-        bc.fillStyle = BG2;
-        for (let x = 0; x < cols; x++) {
-            for (let y = 0; y < rows; y++) {
-                if ((x + y) & 1) {
-                    bc.fillRect(ox + x * cellSize, oy + y * cellSize, cellSize, cellSize);
-                }
+        // Subtle dot grid at intersections
+        bc.fillStyle = 'rgba(0,0,0,.045)';
+        for (let x = 0; x <= cols; x++) {
+            for (let y = 0; y <= rows; y++) {
+                bc.beginPath();
+                bc.arc(ox + x * cellSize, oy + y * cellSize, 1.2, 0, Math.PI * 2);
+                bc.fill();
             }
         }
 
-        // Border
+        // Subtle vignette for depth
+        var gcx = ox + cols * cellSize / 2;
+        var gcy = oy + rows * cellSize / 2;
+        var gr  = Math.max(cols * cellSize, rows * cellSize) * 0.75;
+        var grad = bc.createRadialGradient(gcx, gcy, 0, gcx, gcy, gr);
+        grad.addColorStop(0, 'rgba(0,0,0,0)');
+        grad.addColorStop(1, 'rgba(0,0,0,0.028)');
+        bc.fillStyle = grad;
+        bc.fillRect(ox, oy, cols * cellSize, rows * cellSize);
+
+        // Subtle border
         bc.strokeStyle = 'rgba(0,0,0,.06)';
         bc.lineWidth = 1;
         bc.strokeRect(ox + .5, oy + .5, cols * cellSize - 1, rows * cellSize - 1);
@@ -136,11 +153,9 @@
     // ════════════════════════════════════════
     function bindInput() {
         const po = { passive: false };
-        // Touch on DOCUMENT (not canvas) so overlays don't block input
         document.addEventListener('touchstart', tsStart, po);
         document.addEventListener('touchmove',  tsMove, po);
         document.addEventListener('touchend',   tsEnd, po);
-        // Keyboard (for testing on desktop)
         document.addEventListener('keydown', onKey);
     }
 
@@ -186,7 +201,6 @@
         };
         if (state === 'start' || state === 'over') {
             go();
-            // Also apply direction if an arrow/WASD key was pressed
             var m = dirMap[e.key];
             if (m) { dir.x = m[0]; dir.y = m[1]; nextDir.x = m[0]; nextDir.y = m[1]; }
             return;
@@ -215,11 +229,14 @@
         const sy = Math.floor(rows / 2);
         snake = [];
         for (let i = 0; i < INIT_LEN; i++) snake.push({ x: sx - i, y: sy });
+        prevSnake = snake.map(function (s) { return { x: s.x, y: s.y }; });
         dir     = { x: 1, y: 0 };
         nextDir = { x: 1, y: 0 };
         score   = 0;
         speed   = START_SPEED;
         particles = [];
+        floatingTexts = [];
+        shakeAmount = 0;
         foodCI  = 0;
         boss    = null;
         dieAnim = null;
@@ -231,13 +248,31 @@
         state = 'die';
         vib([30, 40, 30, 40, 60]);
         flash();
+        shakeAmount = 14;
         dieAnim = { idx: 0, t: performance.now() };
+
+        // Update high score
+        if (score > hiScore) {
+            hiScore = score;
+            try { localStorage.setItem('gls_hi', hiScore); } catch (_) {}
+        }
     }
 
     function showOver() {
         state = 'over';
         hide($hud);
         animNum($fs, score, 500);
+
+        // High score display
+        if ($hi) {
+            if (score >= hiScore && score > 0) {
+                $hi.textContent = 'NOWY REKORD!';
+                $hi.className = 'os-hi new';
+            } else {
+                $hi.textContent = 'REKORD: ' + hiScore;
+                $hi.className = 'os-hi';
+            }
+        }
 
         // Build "words" string
         const n = snake.length;
@@ -267,6 +302,8 @@
     // GAME LOGIC
     // ════════════════════════════════════════
     function tick() {
+        prevSnake = snake.map(function (s) { return { x: s.x, y: s.y }; });
+
         dir.x = nextDir.x;
         dir.y = nextDir.y;
 
@@ -289,9 +326,11 @@
             score += BOSS_BONUS;
             speed = Math.max(MIN_SPEED, speed - SPEED_STEP * 3);
             updHud();
-            // Big explosion in orange
-            burst(ox + boss.x * cellSize + cellSize / 2, oy + boss.y * cellSize + cellSize / 2, '#FC5100', 30);
-            burst(ox + boss.x * cellSize + cellSize / 2, oy + boss.y * cellSize + cellSize / 2, '#FFB4ED', 20);
+            var bpx = ox + boss.x * cellSize + cellSize / 2;
+            var bpy = oy + boss.y * cellSize + cellSize / 2;
+            burst(bpx, bpy, '#FC5100', 30);
+            burst(bpx, bpy, '#FFB4ED', 20);
+            addFloating(bpx, bpy - cellSize, '+' + BOSS_BONUS, '#FC5100');
             vib([40, 30, 40, 30, 80]);
             boss = null;
             spawnFood();
@@ -301,15 +340,13 @@
             score++;
             speed = Math.max(MIN_SPEED, speed - SPEED_STEP);
             updHud();
-            burst(
-                ox + food.x * cellSize + cellSize / 2,
-                oy + food.y * cellSize + cellSize / 2,
-                FOOD_COLORS[foodCI], 14
-            );
+            var fpx = ox + food.x * cellSize + cellSize / 2;
+            var fpy = oy + food.y * cellSize + cellSize / 2;
+            burst(fpx, fpy, FOOD_COLORS[foodCI], 14);
+            addFloating(fpx, fpy - cellSize, '+1', FOOD_COLORS[foodCI]);
             vib(12);
             foodCI = (foodCI + 1) % FOOD_COLORS.length;
 
-            // Spawn boss every GOOD LOOKING completion
             if (score > 0 && score % BOSS_EVERY === 0) {
                 spawnBoss();
             }
@@ -393,42 +430,90 @@
     }
 
     // ════════════════════════════════════════
+    // FLOATING TEXTS
+    // ════════════════════════════════════════
+    function addFloating(x, y, text, color) {
+        floatingTexts.push({
+            x: x, y: y,
+            text: text,
+            color: color,
+            life: 1,
+            vy: -1.5
+        });
+    }
+
+    function tickFloating() {
+        for (let i = floatingTexts.length - 1; i >= 0; i--) {
+            var ft = floatingTexts[i];
+            ft.y += ft.vy;
+            ft.vy *= 0.97;
+            ft.life -= 0.02;
+            if (ft.life <= 0) floatingTexts.splice(i, 1);
+        }
+    }
+
+    function drawFloating() {
+        var fsize = Math.round(cellSize * 0.65);
+        ctx.font = '700 ' + fsize + 'px "Space Grotesk",system-ui,sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        for (let i = 0; i < floatingTexts.length; i++) {
+            var ft = floatingTexts[i];
+            ctx.globalAlpha = Math.max(0, Math.min(1, ft.life * 1.5));
+            ctx.fillStyle = ft.color;
+            ctx.fillText(ft.text, ft.x, ft.y);
+        }
+        ctx.globalAlpha = 1;
+    }
+
+    // ════════════════════════════════════════
     // RENDER
     // ════════════════════════════════════════
-    function render(now) {
-        // Pre-rendered background (1:1 pixel copy)
+    function render(now, progress) {
+        // Screen shake offset
+        var sx = 0, sy = 0;
+        if (shakeAmount > 0.3) {
+            sx = (Math.random() - 0.5) * shakeAmount;
+            sy = (Math.random() - 0.5) * shakeAmount;
+            shakeAmount *= 0.88;
+            if (shakeAmount < 0.3) shakeAmount = 0;
+        }
+
+        // Pre-rendered background
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.drawImage(bgBuf, 0, 0);
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.setTransform(dpr, 0, 0, dpr, sx, sy);
 
         if (state === 'play' || state === 'die') {
             if (state !== 'die') {
                 drawFood(now);
                 if (boss) drawBoss(now);
             }
-            drawSnake();
+            drawSnake(state === 'play' ? progress : 1);
         }
         drawParticles();
+        drawFloating();
     }
 
-    // ── food ──
+    // ── food (circle) ──
     function drawFood(now) {
-        const pulse = Math.sin(now / 200) * .07 + 1;
-        const s  = (cellSize - GAP) * pulse;
-        const px = ox + food.x * cellSize + (cellSize - s) / 2;
-        const py = oy + food.y * cellSize + (cellSize - s) / 2;
+        var pulse = Math.sin(now / 200) * .07 + 1;
+        var r  = (cellSize - GAP) * pulse / 2;
+        var cx = ox + food.x * cellSize + cellSize / 2;
+        var cy = oy + food.y * cellSize + cellSize / 2;
 
-        // Glow (cheap simulated glow)
-        const gs = s + 8;
-        ctx.globalAlpha = .18;
+        // Glow
+        ctx.globalAlpha = .15;
         ctx.fillStyle = FOOD_COLORS[foodCI];
-        rrect(px - 4, py - 4, gs, gs, FOOD_R + 3);
+        ctx.beginPath();
+        ctx.arc(cx, cy, r + 6, 0, Math.PI * 2);
         ctx.fill();
         ctx.globalAlpha = 1;
 
         // Solid food
         ctx.fillStyle = FOOD_COLORS[foodCI];
-        rrect(px, py, s, s, FOOD_R);
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
         ctx.fill();
     }
 
@@ -457,54 +542,112 @@
         ctx.restore();
     }
 
-    // ── snake ──
-    function drawSnake() {
-        const dead = dieAnim ? dieAnim.idx : 0;
+    // ── snake (continuous smooth body with interpolation) ──
+    function segR(idx, total) {
+        var fromTail = total - 1 - idx;
+        if (total > 5 && fromTail < TAPER_SEGS) {
+            var t = fromTail / TAPER_SEGS;
+            return bodyR * (0.4 + 0.6 * t);
+        }
+        return bodyR;
+    }
 
-        for (let i = snake.length - 1; i >= 0; i--) {
+    function drawSnake(progress) {
+        var dead = dieAnim ? dieAnim.idx : 0;
+
+        // Calculate interpolated pixel positions
+        var pts = [];
+        for (var i = 0; i < snake.length; i++) {
             if (i < dead) continue;
 
-            const seg = snake[i];
-            const letter = LETTERS[i % LETTERS.length];
-            const isHead = (i === 0) && !dieAnim;
-            const isSpace = letter === ' ';
+            var lx, ly;
+            if (prevSnake && i < prevSnake.length) {
+                lx = prevSnake[i].x + (snake[i].x - prevSnake[i].x) * progress;
+                ly = prevSnake[i].y + (snake[i].y - prevSnake[i].y) * progress;
+            } else {
+                lx = snake[i].x;
+                ly = snake[i].y;
+            }
 
-            const px = ox + seg.x * cellSize + GAP / 2;
-            const py = oy + seg.y * cellSize + GAP / 2;
-            const s  = cellSize - GAP;
+            pts.push({
+                idx: i,
+                px: ox + lx * cellSize + cellSize / 2,
+                py: oy + ly * cellSize + cellSize / 2
+            });
+        }
 
-            // Black body
-            ctx.fillStyle = '#000';
-            rrect(px, py, s, s, SEG_R);
+        if (pts.length === 0) return;
+
+        // ─── Draw connections between adjacent segments ───
+        ctx.fillStyle = '#000';
+        for (var j = 0; j < pts.length - 1; j++) {
+            var a = pts[j], b = pts[j + 1];
+            var dx = b.px - a.px;
+            var dy = b.py - a.py;
+            var dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < 0.5) continue;
+
+            var rA = segR(j, pts.length);
+            var rB = segR(j + 1, pts.length);
+            var nxA = (-dy / dist) * rA;
+            var nyA = (dx / dist) * rA;
+            var nxB = (-dy / dist) * rB;
+            var nyB = (dx / dist) * rB;
+
+            ctx.beginPath();
+            ctx.moveTo(a.px + nxA, a.py + nyA);
+            ctx.lineTo(b.px + nxB, b.py + nyB);
+            ctx.lineTo(b.px - nxB, b.py - nyB);
+            ctx.lineTo(a.px - nxA, a.py - nyA);
+            ctx.closePath();
             ctx.fill();
+        }
 
-            // Head highlight
-            if (isHead) {
-                ctx.strokeStyle = 'rgba(255,255,255,.22)';
-                ctx.lineWidth = 1.5;
-                rrect(px, py, s, s, SEG_R);
-                ctx.stroke();
-            }
+        // ─── Draw circles at each segment (back to front, head on top) ───
+        for (var k = pts.length - 1; k >= 0; k--) {
+            var r = segR(k, pts.length);
 
-            // Letter - always upright, skip spaces (visual separator)
-            if (!isSpace) {
-                ctx.fillStyle = '#FFF';
-                ctx.font = '700 ' + Math.round(s * .52) + 'px "Space Grotesk",system-ui,sans-serif';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
-                ctx.fillText(letter, px + s / 2, py + s / 2 + 1);
-            }
+            ctx.fillStyle = '#000';
+            ctx.beginPath();
+            ctx.arc(pts[k].px, pts[k].py, r, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // ─── Head highlight ───
+        if (pts.length > 0 && pts[0].idx === 0 && !dieAnim) {
+            ctx.strokeStyle = 'rgba(255,255,255,.22)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(pts[0].px, pts[0].py, segR(0, pts.length), 0, Math.PI * 2);
+            ctx.stroke();
+        }
+
+        // ─── Letters ───
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        for (var m = 0; m < pts.length; m++) {
+            var letter = LETTERS[pts[m].idx % LETTERS.length];
+            if (letter === ' ') continue;
+
+            var sr = segR(m, pts.length);
+            if (sr < bodyR * 0.6) continue; // too small for letter
+
+            var fsize = Math.round(sr * 1.1);
+            ctx.font = '700 ' + fsize + 'px "Space Grotesk",system-ui,sans-serif';
+            ctx.fillStyle = '#FFF';
+            ctx.fillText(letter, pts[m].px, pts[m].py + 1);
         }
     }
 
-    // ── particles ──
+    // ── particles (circles instead of squares) ──
     function drawParticles() {
         for (let i = 0; i < particles.length; i++) {
             const p = particles[i];
             ctx.globalAlpha = Math.max(0, p.l);
             ctx.fillStyle = p.c;
-            const hs = p.s / 2;
-            ctx.fillRect(p.x - hs, p.y - hs, p.s, p.s);
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.s / 2, 0, Math.PI * 2);
+            ctx.fill();
         }
         ctx.globalAlpha = 1;
     }
@@ -512,18 +655,8 @@
     // ════════════════════════════════════════
     // HELPERS
     // ════════════════════════════════════════
-    function rrect(x, y, w, h, r) {
-        ctx.beginPath();
-        ctx.moveTo(x + r, y);
-        ctx.lineTo(x + w - r, y);
-        ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-        ctx.lineTo(x + w, y + h - r);
-        ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-        ctx.lineTo(x + r, y + h);
-        ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-        ctx.lineTo(x, y + r);
-        ctx.quadraticCurveTo(x, y, x + r, y);
-        ctx.closePath();
+    function smoothstep(t) {
+        return t * t * (3 - 2 * t);
     }
 
     function vib(p) { try { navigator.vibrate && navigator.vibrate(p); } catch (_) {} }
@@ -560,8 +693,16 @@
         }
         if (state === 'die') tickDie(now);
 
+        // Interpolation progress with easing
+        var progress = 0;
+        if (state === 'play' && speed > 0) {
+            progress = Math.min((now - lastTick) / speed, 1);
+            progress = smoothstep(progress);
+        }
+
         tickParticles();
-        render(now);
+        tickFloating();
+        render(now, progress);
 
         requestAnimationFrame(loop);
     }
