@@ -11,7 +11,7 @@
     const SPEED_STEP = 2;      // ms faster per food
     const MIN_SPEED = 72;      // fastest tick
     const GAP = 2;             // visual gap reference
-    const SWIPE_MIN = 20;      // min px for swipe
+    const SWIPE_MIN = 12;      // min px for swipe (responsive but not twitchy)
     const INIT_LEN = 3;        // starting snake length
     const BOSS_BONUS = 5;      // bonus points for boss
     const BOSS_EVERY = 13;     // boss spawns every N foods
@@ -335,7 +335,7 @@
             addFloating(bpx, bpy - cellSize, '+' + BOSS_BONUS, '#FC5100');
             vib([40, 30, 40, 30, 80]);
             boss = null;
-            spawnFood();
+            // NOTE: existing food stays where it is
         }
         // Eat normal food?
         else if (nx === food.x && ny === food.y) {
@@ -367,6 +367,7 @@
             for (let i = 0; i < snake.length; i++) {
                 if (snake[i].x === fx && snake[i].y === fy) { ok = false; break; }
             }
+            if (boss && boss.x === fx && boss.y === fy) ok = false;
         } while (!ok);
         food = { x: fx, y: fy };
     }
@@ -544,7 +545,7 @@
         ctx.restore();
     }
 
-    // ── snake (continuous uniform body with smooth interpolation) ──
+    // ── snake (thick rounded stroke = perfect corners) ──
     function drawSnake(progress) {
         var dead = dieAnim ? dieAnim.idx : 0;
 
@@ -562,7 +563,6 @@
                 var wrapped = Math.abs(dx) > 1 || Math.abs(dy) > 1;
 
                 if (wrapped) {
-                    // Don't interpolate wrapping segments - snap to new pos
                     lx = snake[i].x;
                     ly = snake[i].y;
                 } else {
@@ -583,47 +583,58 @@
 
         if (pts.length === 0) return;
 
-        // ─── Draw connections between adjacent segments ───
+        // Split into continuous runs (break at wrap points)
+        var runs = [[]];
+        for (var j = 0; j < pts.length; j++) {
+            if (j > 0) {
+                var cdx = pts[j].px - pts[j - 1].px;
+                var cdy = pts[j].py - pts[j - 1].py;
+                var dist = Math.sqrt(cdx * cdx + cdy * cdy);
+                if (dist > cellSize * 1.8) {
+                    runs.push([]);
+                }
+            }
+            runs[runs.length - 1].push(pts[j]);
+        }
+
+        // Draw each run as thick rounded stroke
+        ctx.strokeStyle = '#000';
         ctx.fillStyle = '#000';
-        for (var j = 0; j < pts.length - 1; j++) {
-            var a = pts[j], b = pts[j + 1];
-            var cdx = b.px - a.px;
-            var cdy = b.py - a.py;
-            var dist = Math.sqrt(cdx * cdx + cdy * cdy);
+        ctx.lineWidth = bodyR * 2;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
 
-            // Skip if overlapping OR if too far (wrapped across screen)
-            if (dist < 0.5 || dist > cellSize * 1.8) continue;
+        for (var r = 0; r < runs.length; r++) {
+            var run = runs[r];
+            if (run.length === 0) continue;
 
-            var nx = (-cdy / dist) * bodyR;
-            var ny = (cdx / dist) * bodyR;
-
-            ctx.beginPath();
-            ctx.moveTo(a.px + nx, a.py + ny);
-            ctx.lineTo(b.px + nx, b.py + ny);
-            ctx.lineTo(b.px - nx, b.py - ny);
-            ctx.lineTo(a.px - nx, a.py - ny);
-            ctx.closePath();
-            ctx.fill();
+            if (run.length === 1) {
+                // Single point → circle
+                ctx.beginPath();
+                ctx.arc(run[0].px, run[0].py, bodyR, 0, Math.PI * 2);
+                ctx.fill();
+            } else {
+                ctx.beginPath();
+                ctx.moveTo(run[0].px, run[0].py);
+                for (var s = 1; s < run.length; s++) {
+                    ctx.lineTo(run[s].px, run[s].py);
+                }
+                ctx.stroke();
+            }
         }
 
-        // ─── Draw circles at each segment (back to front, head on top) ───
-        for (var k = pts.length - 1; k >= 0; k--) {
-            ctx.fillStyle = '#000';
-            ctx.beginPath();
-            ctx.arc(pts[k].px, pts[k].py, bodyR, 0, Math.PI * 2);
-            ctx.fill();
-        }
-
-        // ─── Head highlight ───
+        // Head highlight ring
         if (pts.length > 0 && pts[0].idx === 0 && !dieAnim) {
             ctx.strokeStyle = 'rgba(255,255,255,.22)';
             ctx.lineWidth = 2;
+            ctx.lineCap = 'butt';
+            ctx.lineJoin = 'miter';
             ctx.beginPath();
             ctx.arc(pts[0].px, pts[0].py, bodyR, 0, Math.PI * 2);
             ctx.stroke();
         }
 
-        // ─── Letters (uniform size always) ───
+        // Letters (uniform size)
         var fsize = Math.round(bodyR * 1.1);
         ctx.font = '700 ' + fsize + 'px "Space Grotesk",system-ui,sans-serif';
         ctx.textAlign = 'center';
