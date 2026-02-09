@@ -15,7 +15,6 @@
     const INIT_LEN = 3;        // starting snake length
     const BOSS_BONUS = 5;      // bonus points for boss
     const BOSS_EVERY = 13;     // boss spawns every N foods
-    const TAPER_SEGS = 3;      // tail taper segment count
 
     // ════════════════════════════════════════
     // STATE
@@ -308,13 +307,16 @@
         dir.y = nextDir.y;
 
         const h  = snake[0];
-        const nx = h.x + dir.x;
-        const ny = h.y + dir.y;
+        var nx = h.x + dir.x;
+        var ny = h.y + dir.y;
 
-        // Wall collision
-        if (nx < 0 || nx >= cols || ny < 0 || ny >= rows) { die(); return; }
+        // Wrap through walls
+        if (nx < 0) nx = cols - 1;
+        else if (nx >= cols) nx = 0;
+        if (ny < 0) ny = rows - 1;
+        else if (ny >= rows) ny = 0;
 
-        // Self collision
+        // Self collision only
         for (let i = 0; i < snake.length; i++) {
             if (snake[i].x === nx && snake[i].y === ny) { die(); return; }
         }
@@ -542,16 +544,7 @@
         ctx.restore();
     }
 
-    // ── snake (continuous smooth body with interpolation) ──
-    function segR(idx, total) {
-        var fromTail = total - 1 - idx;
-        if (total > 5 && fromTail < TAPER_SEGS) {
-            var t = fromTail / TAPER_SEGS;
-            return bodyR * (0.4 + 0.6 * t);
-        }
-        return bodyR;
-    }
-
+    // ── snake (continuous uniform body with smooth interpolation) ──
     function drawSnake(progress) {
         var dead = dieAnim ? dieAnim.idx : 0;
 
@@ -562,8 +555,20 @@
 
             var lx, ly;
             if (prevSnake && i < prevSnake.length) {
-                lx = prevSnake[i].x + (snake[i].x - prevSnake[i].x) * progress;
-                ly = prevSnake[i].y + (snake[i].y - prevSnake[i].y) * progress;
+                var dx = snake[i].x - prevSnake[i].x;
+                var dy = snake[i].y - prevSnake[i].y;
+
+                // Detect wall wrap (delta > 1 cell = wrapped)
+                var wrapped = Math.abs(dx) > 1 || Math.abs(dy) > 1;
+
+                if (wrapped) {
+                    // Don't interpolate wrapping segments - snap to new pos
+                    lx = snake[i].x;
+                    ly = snake[i].y;
+                } else {
+                    lx = prevSnake[i].x + dx * progress;
+                    ly = prevSnake[i].y + dy * progress;
+                }
             } else {
                 lx = snake[i].x;
                 ly = snake[i].y;
@@ -582,34 +587,30 @@
         ctx.fillStyle = '#000';
         for (var j = 0; j < pts.length - 1; j++) {
             var a = pts[j], b = pts[j + 1];
-            var dx = b.px - a.px;
-            var dy = b.py - a.py;
-            var dist = Math.sqrt(dx * dx + dy * dy);
-            if (dist < 0.5) continue;
+            var cdx = b.px - a.px;
+            var cdy = b.py - a.py;
+            var dist = Math.sqrt(cdx * cdx + cdy * cdy);
 
-            var rA = segR(j, pts.length);
-            var rB = segR(j + 1, pts.length);
-            var nxA = (-dy / dist) * rA;
-            var nyA = (dx / dist) * rA;
-            var nxB = (-dy / dist) * rB;
-            var nyB = (dx / dist) * rB;
+            // Skip if overlapping OR if too far (wrapped across screen)
+            if (dist < 0.5 || dist > cellSize * 1.8) continue;
+
+            var nx = (-cdy / dist) * bodyR;
+            var ny = (cdx / dist) * bodyR;
 
             ctx.beginPath();
-            ctx.moveTo(a.px + nxA, a.py + nyA);
-            ctx.lineTo(b.px + nxB, b.py + nyB);
-            ctx.lineTo(b.px - nxB, b.py - nyB);
-            ctx.lineTo(a.px - nxA, a.py - nyA);
+            ctx.moveTo(a.px + nx, a.py + ny);
+            ctx.lineTo(b.px + nx, b.py + ny);
+            ctx.lineTo(b.px - nx, b.py - ny);
+            ctx.lineTo(a.px - nx, a.py - ny);
             ctx.closePath();
             ctx.fill();
         }
 
         // ─── Draw circles at each segment (back to front, head on top) ───
         for (var k = pts.length - 1; k >= 0; k--) {
-            var r = segR(k, pts.length);
-
             ctx.fillStyle = '#000';
             ctx.beginPath();
-            ctx.arc(pts[k].px, pts[k].py, r, 0, Math.PI * 2);
+            ctx.arc(pts[k].px, pts[k].py, bodyR, 0, Math.PI * 2);
             ctx.fill();
         }
 
@@ -618,28 +619,24 @@
             ctx.strokeStyle = 'rgba(255,255,255,.22)';
             ctx.lineWidth = 2;
             ctx.beginPath();
-            ctx.arc(pts[0].px, pts[0].py, segR(0, pts.length), 0, Math.PI * 2);
+            ctx.arc(pts[0].px, pts[0].py, bodyR, 0, Math.PI * 2);
             ctx.stroke();
         }
 
-        // ─── Letters ───
+        // ─── Letters (uniform size always) ───
+        var fsize = Math.round(bodyR * 1.1);
+        ctx.font = '700 ' + fsize + 'px "Space Grotesk",system-ui,sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         for (var m = 0; m < pts.length; m++) {
             var letter = LETTERS[pts[m].idx % LETTERS.length];
             if (letter === ' ') continue;
-
-            var sr = segR(m, pts.length);
-            if (sr < bodyR * 0.6) continue; // too small for letter
-
-            var fsize = Math.round(sr * 1.1);
-            ctx.font = '700 ' + fsize + 'px "Space Grotesk",system-ui,sans-serif';
             ctx.fillStyle = '#FFF';
             ctx.fillText(letter, pts[m].px, pts[m].py + 1);
         }
     }
 
-    // ── particles (circles instead of squares) ──
+    // ── particles (circles) ──
     function drawParticles() {
         for (let i = 0; i < particles.length; i++) {
             const p = particles[i];
@@ -655,10 +652,6 @@
     // ════════════════════════════════════════
     // HELPERS
     // ════════════════════════════════════════
-    function smoothstep(t) {
-        return t * t * (3 - 2 * t);
-    }
-
     function vib(p) { try { navigator.vibrate && navigator.vibrate(p); } catch (_) {} }
 
     function show(el) { el.classList.remove('hidden'); }
@@ -693,11 +686,10 @@
         }
         if (state === 'die') tickDie(now);
 
-        // Interpolation progress with easing
+        // Linear interpolation (constant velocity = max smoothness)
         var progress = 0;
         if (state === 'play' && speed > 0) {
             progress = Math.min((now - lastTick) / speed, 1);
-            progress = smoothstep(progress);
         }
 
         tickParticles();
