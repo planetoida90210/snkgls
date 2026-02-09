@@ -391,20 +391,9 @@
     }
 
     // ── snake ──
-    function segAngle(i) {
-        // Direction this segment faces (toward head)
-        var dx, dy;
-        if (i === 0) { dx = dir.x; dy = dir.y; }
-        else { dx = snake[i - 1].x - snake[i].x; dy = snake[i - 1].y - snake[i].y; }
-        if (dy === 1) return Math.PI / 2;    // down
-        if (dy === -1) return -Math.PI / 2;  // up
-        return 0;                             // left or right: keep upright
-    }
-
     function drawSnake() {
         const dead = dieAnim ? dieAnim.idx : 0;
 
-        // Draw tail → head so head is on top
         for (let i = snake.length - 1; i >= 0; i--) {
             if (i < dead) continue;
 
@@ -422,7 +411,7 @@
             rrect(px, py, s, s, SEG_R);
             ctx.fill();
 
-            // Head subtle highlight
+            // Head highlight
             if (isHead) {
                 ctx.strokeStyle = 'rgba(255,255,255,.22)';
                 ctx.lineWidth = 1.5;
@@ -430,20 +419,13 @@
                 ctx.stroke();
             }
 
-            // Letter (skip spaces - they act as visual separator)
+            // Letter - always upright, skip spaces (visual separator)
             if (!isSpace) {
-                const angle = segAngle(i);
-                const cx = px + s / 2;
-                const cy = py + s / 2 + 1;
-                ctx.save();
-                ctx.translate(cx, cy);
-                if (angle !== 0) ctx.rotate(angle);
                 ctx.fillStyle = '#FFF';
                 ctx.font = '700 ' + Math.round(s * .52) + 'px "Space Grotesk",system-ui,sans-serif';
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
-                ctx.fillText(letter, 0, 0);
-                ctx.restore();
+                ctx.fillText(letter, px + s / 2, py + s / 2 + 1);
             }
         }
     }
